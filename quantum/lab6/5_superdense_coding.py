@@ -11,8 +11,8 @@ def superdense_enc_and_dec(msg):
     
     # Alice encodes (b1, b0)
     b1, b0 = int(msg[0]), int(msg[1])
-    if b0 == 1: qc.z(0) # X gate
-    if b1 == 1: qc.x(0) # Z gate
+    if b0 == 1: qc.z(0) # z gate
+    if b1 == 1: qc.x(0) # x gate
     qc.barrier()
 
     # print statevector
@@ -29,3 +29,7 @@ for msg in ['00','01','10','11']:
     qc = superdense_enc_and_dec(msg)
     r = sim.run(qc, shots=1024).result()
     print(f'{msg} -> {r.get_counts()}')
+
+
+
+    

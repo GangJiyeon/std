@@ -1,0 +1,386 @@
+
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>헤어 컬러 테스터</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root{
+  --bg:#fbf8f9; --panel:#ffffff; --ink:#2a2326; --sub:#7a6e73; --line:#e8dfe3;
+  --accent:#c94f78; --soft:#f7e7ee; --stage:#efe9ec;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:Pretendard,"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;font-size:14px;line-height:1.5}
+header{padding:22px 28px 14px;display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+h1{font-size:22px;margin:0;font-weight:800;letter-spacing:-.02em}
+header p{margin:0;color:var(--sub)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;padding:0 28px 28px;align-items:start}
+@media (max-width:900px){main{grid-template-columns:1fr;padding:0 14px 20px}header{padding:18px 14px 10px}}
+.stage{background:var(--stage);border-radius:14px;min-height:480px;display:flex;flex-direction:column;overflow:hidden}
+.toolbar{display:flex;gap:8px;padding:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);background:#fff}
+.canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;position:relative}
+canvas#view{max-width:100%;max-height:72vh;border-radius:8px;display:none;touch-action:none}
+.drop{border:2px dashed #d6c4cc;border-radius:12px;padding:48px 24px;text-align:center;color:var(--sub);cursor:pointer;max-width:420px}
+.drop strong{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}
+.drop.over{border-color:var(--accent);background:var(--soft)}
+aside{display:flex;flex-direction:column;gap:14px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+section h2{font-size:14px;margin:0 0 10px;font-weight:700}
+button,.btn{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover,.btn:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button[aria-pressed="true"]{background:var(--soft);border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;width:100%;background:#fff}
+.status{font-size:13px;color:var(--sub);margin-top:8px;min-height:20px}
+.status.err{color:#b3261e}
+.stat{display:flex;justify-content:space-between;font-size:13px;color:var(--sub);margin-top:6px}
+.stat b{color:var(--ink);font-weight:600}
+.swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px}
+.sw{aspect-ratio:1;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--line);padding:0;cursor:pointer}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--accent)}
+.row{display:flex;gap:8px;align-items:center}
+input[type=color]{width:44px;height:34px;border:1px solid var(--line);border-radius:8px;padding:2px;background:#fff;cursor:pointer}
+.hex{font-variant-numeric:tabular-nums;color:var(--sub)}
+.ctrl{margin-top:10px}
+.ctrl label{display:flex;justify-content:space-between;font-size:13px}
+.ctrl label span{color:var(--sub);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.hint{font-size:12px;color:var(--sub);margin:6px 0 0}
+input[type=file]{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>헤어 컬러 테스터</h1>
+  <p>베이스 이미지 한 장으로 머리 영역만 따서, AI 호출 없이 색을 실시간으로 바꿔봅니다.</p>
+</header>
+<main>
+  <div class="stage">
+    <div class="toolbar">
+      <button id="holdOrig" disabled>누르는 동안 원본 보기</button>
+      <button id="toggleMask" aria-pressed="false" disabled>마스크 보기</button>
+      <button id="save" disabled>결과 PNG 저장</button>
+    </div>
+    <div class="canvas-wrap" id="wrap">
+      <label class="drop" id="drop" for="baseFile">
+        <strong>베이스 이미지를 올려주세요</strong>
+        클릭하거나 파일을 끌어다 놓으세요. 정면 인물 사진이 잘 됩니다.
+      </label>
+      <canvas id="view"></canvas>
+    </div>
+  </div>
+ 
+  <aside>
+    <section>
+      <h2>베이스 이미지</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label class="btn" for="baseFile" style="flex:1;text-align:center">이미지 선택</label>
+        <input type="file" id="baseFile" accept="image/*">
+      </div>
+      <select id="model" aria-label="분할 모델">
+        <option value="multiclass">Selfie multiclass (머리/얼굴/옷 구분)</option>
+        <option value="hair">Hair segmenter (머리 전용)</option>
+      </select>
+      <div class="status" id="status">모델은 첫 실행 때 한 번 내려받습니다.</div>
+      <div class="stat">베이스 머리 평균 밝기 <b id="baseL">–</b></div>
+      <p class="hint">L 60 이상이면 어두운 색까지 자연스럽게 내려갑니다. 30 이하(흑발)면 밝은 색은 탁하게 나옵니다.</p>
+    </section>
+ 
+    <section>
+      <h2>목표 색</h2>
+      <div class="swatches" id="swatches"></div>
+      <div class="row">
+        <input type="color" id="picker" value="#5a3a28" aria-label="직접 색 고르기">
+        <span class="hex" id="hex">#5a3a28</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="btn" for="refFile" style="flex:1;text-align:center">참고 사진에서 머리색 추출</label>
+        <input type="file" id="refFile" accept="image/*">
+      </div>
+      <p class="hint">연예인 사진이나 원래 내 사진을 올리면 머리 영역 평균색을 목표 색으로 잡습니다.</p>
+    </section>
+ 
+    <section>
+      <h2>색 조절</h2>
+      <div class="ctrl"><label for="lOff">밝기 보정 <span id="lOffV">0</span></label><input type="range" id="lOff" min="-25" max="20" value="0"></div>
+      <div class="ctrl"><label for="chroma">채도 <span id="chromaV">1.00</span></label><input type="range" id="chroma" min="0" max="1.6" step="0.01" value="1"></div>
+      <div class="ctrl"><label for="tex">머리결 명암 유지 <span id="texV">1.00</span></label><input type="range" id="tex" min="0.3" max="1.6" step="0.01" value="1"></div>
+      <div class="ctrl"><label for="vari">원래 색 얼룩 유지 <span id="variV">0.40</span></label><input type="range" id="vari" min="0" max="1" step="0.01" value="0.4"></div>
+      <div class="ctrl"><label for="amt">적용 강도 <span id="amtV">1.00</span></label><input type="range" id="amt" min="0" max="1" step="0.01" value="1"></div>
+    </section>
+ 
+    <section>
+      <h2>마스크</h2>
+      <div class="ctrl"><label for="thr">머리 판정 기준 <span id="thrV">0.50</span></label><input type="range" id="thr" min="0.15" max="0.85" step="0.01" value="0.5"></div>
+      <div class="ctrl"><label for="soft">경계 전환 폭 <span id="softV">0.20</span></label><input type="range" id="soft" min="0.02" max="0.45" step="0.01" value="0.2"></div>
+      <div class="ctrl"><label for="feather">경계 블러 <span id="featherV">3</span></label><input type="range" id="feather" min="0" max="16" step="1" value="3"></div>
+    </section>
+  </aside>
+</main>
+ 
+<script type="module">
+import { FilesetResolver, ImageSegmenter } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+ 
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODELS = {
+  multiclass: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
+  hair: "https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/hair_segmenter.tflite"
+};
+const HAIR_INDEX = { multiclass: 1, hair: 1 };
+const MAX_SIDE = 900;
+ 
+const PALETTE = [
+  ["흑발","#1c1714"],["블루블랙","#1d2230"],["다크브라운","#3b2a20"],["초코브라운","#5a3a28"],
+  ["애쉬브라운","#6b5a4e"],["밀크브라운","#8a6a50"],["레드브라운","#6e2f22"],["와인","#5a1f2c"],
+  ["핑크브라운","#8a5552"],["카키브라운","#5b5a3e"],["애쉬그레이","#8c8a88"],["베이지블론드","#c8a77e"]
+];
+ 
+const $ = id => document.getElementById(id);
+const view = $("view"), ctx = view.getContext("2d", { willReadFrequently: true });
+const statusEl = $("status");
+ 
+let fileset = null; const segs = {};
+let W = 0, H = 0, src = null, Ls, As, Bs, rawMask = null, mask = null;
+let meanL = 50, meanA = 0, meanB = 0;
+let showOrig = false, showMask = false, pending = false;
+let target = hexToRgb($("picker").value);
+ 
+/* ---------- color math ---------- */
+const S2L = new Float32Array(256);
+for (let i = 0; i < 256; i++) { const c = i / 255; S2L[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+const L2S = new Uint8ClampedArray(4097);
+for (let i = 0; i <= 4096; i++) { const v = i / 4096; L2S[i] = Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)); }
+const fLab = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+const fInv = t => { const t3 = t * t * t; return t3 > 0.008856 ? t3 : (t - 16 / 116) / 7.787; };
+ 
+function rgbToLab(r, g, b) {
+  const R = S2L[r], G = S2L[g], B = S2L[b];
+  const x = fLab((0.4124564 * R + 0.3575761 * G + 0.1804375 * B) / 0.95047);
+  const y = fLab(0.2126729 * R + 0.7151522 * G + 0.0721750 * B);
+  const z = fLab((0.0193339 * R + 0.1191920 * G + 0.9503041 * B) / 1.08883);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+const lin = v => L2S[Math.max(0, Math.min(4096, (v * 4096) | 0))];
+function labToRgb(L, a, b, out, o) {
+  const fy = (L + 16) / 116, fx = fy + a / 500, fz = fy - b / 200;
+  const X = 0.95047 * fInv(fx), Y = fInv(fy), Z = 1.08883 * fInv(fz);
+  out[o] = lin(3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z);
+  out[o + 1] = lin(-0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z);
+  out[o + 2] = lin(0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z);
+}
+function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function rgbToHex(r, g, b) { return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join(""); }
+ 
+/* ---------- segmentation ---------- */
+async function getSeg(kind) {
+  if (segs[kind]) return segs[kind];
+  setStatus("모델 내려받는 중…");
+  fileset ??= await FilesetResolver.forVisionTasks(WASM);
+  const opts = d => ({ baseOptions: { modelAssetPath: MODELS[kind], delegate: d }, runningMode: "IMAGE", outputConfidenceMasks: true, outputCategoryMask: false });
+  try { segs[kind] = await ImageSegmenter.createFromOptions(fileset, opts("GPU")); }
+  catch (e) { segs[kind] = await ImageSegmenter.createFromOptions(fileset, opts("CPU")); }
+  return segs[kind];
+}
+ 
+async function hairMaskFor(canvas, w, h) {
+  const kind = $("model").value;
+  const seg = await getSeg(kind);
+  const res = seg.segment(canvas);
+  const m = res.confidenceMasks[HAIR_INDEX[kind]];
+  const mw = m.width, mh = m.height, data = new Float32Array(m.getAsFloat32Array());
+  res.close?.();
+  if (mw === w && mh === h) return data;
+  const out = new Float32Array(w * h); // bilinear resample
+  for (let y = 0; y < h; y++) {
+    const sy = (y + 0.5) * mh / h - 0.5, y0 = Math.max(0, Math.floor(sy)), y1 = Math.min(mh - 1, y0 + 1), fy = Math.min(1, Math.max(0, sy - y0));
+    for (let x = 0; x < w; x++) {
+      const sx = (x + 0.5) * mw / w - 0.5, x0 = Math.max(0, Math.floor(sx)), x1 = Math.min(mw - 1, x0 + 1), fx = Math.min(1, Math.max(0, sx - x0));
+      const a = data[y0 * mw + x0] * (1 - fx) + data[y0 * mw + x1] * fx;
+      const b = data[y1 * mw + x0] * (1 - fx) + data[y1 * mw + x1] * fx;
+      out[y * w + x] = a * (1 - fy) + b * fy;
+    }
+  }
+  return out;
+}
+ 
+function boxBlur(arr, w, h, r) {
+  if (r < 1) return arr;
+  const tmp = new Float32Array(arr.length), out = new Float32Array(arr.length), d = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    let s = 0; const row = y * w;
+    for (let x = -r; x <= r; x++) s += arr[row + Math.min(w - 1, Math.max(0, x))];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = s / d;
+      s += arr[row + Math.min(w - 1, x + r + 1)] - arr[row + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let y = -r; y <= r; y++) s += tmp[Math.min(h - 1, Math.max(0, y)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = s / d;
+      s += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+  return out;
+}
+ 
+function rebuildMask() {
+  if (!rawMask) return;
+  const thr = +$("thr").value, soft = +$("soft").value, lo = thr - soft / 2, hi = thr + soft / 2;
+  const m = new Float32Array(rawMask.length);
+  for (let i = 0; i < m.length; i++) {
+    let t = (rawMask[i] - lo) / (hi - lo); t = t < 0 ? 0 : t > 1 ? 1 : t;
+    m[i] = t * t * (3 - 2 * t);
+  }
+  const r = +$("feather").value;
+  mask = boxBlur(boxBlur(m, W, H, r), W, H, r);
+  // hair stats from confident pixels
+  let sw = 0, sl = 0, sa = 0, sb = 0;
+  for (let i = 0; i < m.length; i++) { const w = m[i]; if (w > 0.6) { sw += w; sl += Ls[i] * w; sa += As[i] * w; sb += Bs[i] * w; } }
+  if (sw > 0) { meanL = sl / sw; meanA = sa / sw; meanB = sb / sw; $("baseL").textContent = "L " + meanL.toFixed(0); }
+  else $("baseL").textContent = "머리 영역 없음";
+}
+ 
+/* ---------- render ---------- */
+function render() {
+  pending = false;
+  if (!src) return;
+  const out = ctx.createImageData(W, H), o = out.data, s = src.data;
+  if (showOrig || !mask) { o.set(s); ctx.putImageData(out, 0, 0); return; }
+ 
+  const [tL0, tA, tB] = rgbToLab(...target);
+  const tL = tL0 + +$("lOff").value, k = +$("tex").value, ch = +$("chroma").value, vari = +$("vari").value, amt = +$("amt").value;
+  const tmp = new Uint8ClampedArray(3);
+  // darker target -> smaller absolute contrast, lighter target -> slightly larger (real hair behaves this way)
+  const kEff = k * Math.min(1.25, Math.max(0.45, (tL + 10) / (meanL + 10)));
+  const KNEE = 78, TOE = 6;
+ 
+  for (let i = 0, p = 0; i < mask.length; i++, p += 4) {
+    const a = mask[i] * amt;
+    if (a < 0.004 && !showMask) { o[p] = s[p]; o[p + 1] = s[p + 1]; o[p + 2] = s[p + 2]; o[p + 3] = 255; continue; }
+    let r = s[p], g = s[p + 1], b = s[p + 2];
+    if (a >= 0.004) {
+      let L = tL + (Ls[i] - meanL) * kEff;
+      // soft shoulder/toe instead of hard clipping at 100/0
+      if (L > KNEE) L = KNEE + (100 - KNEE) * (1 - Math.exp(-(L - KNEE) / (100 - KNEE)));
+      else if (L < TOE) L = TOE * Math.exp((L - TOE) / TOE);
+      // less chroma in deep shadow and bright highlight
+      const f = Math.sqrt(Math.sin(Math.PI * Math.min(0.98, Math.max(0.02, L / 100))));
+      const A = tA * ch * f + (As[i] - meanA) * vari;
+      const B = tB * ch * f + (Bs[i] - meanB) * vari;
+      labToRgb(L, A, B, tmp, 0);
+      r += (tmp[0] - r) * a; g += (tmp[1] - g) * a; b += (tmp[2] - b) * a;
+    }
+    if (showMask) { const m = mask[i] * 0.55; r += (201 - r) * m; g += (79 - g) * m; b += (120 - b) * m; }
+    o[p] = r; o[p + 1] = g; o[p + 2] = b; o[p + 3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+}
+const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(render); } };
+ 
+/* ---------- loading ---------- */
+function setStatus(t, err = false) { statusEl.textContent = t; statusEl.classList.toggle("err", err); }
+ 
+function fileToImage(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => res(img); img.onerror = () => rej(new Error("이미지를 읽지 못했습니다."));
+    img.src = url;
+  });
+}
+ 
+async function loadBase(file) {
+  if (!file || !file.type.startsWith("image/")) { setStatus("이미지 파일만 올릴 수 있습니다.", true); return; }
+  try {
+    const img = await fileToImage(file);
+    const sc = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
+    W = Math.round(img.width * sc); H = Math.round(img.height * sc);
+    view.width = W; view.height = H;
+    ctx.drawImage(img, 0, 0, W, H);
+    src = ctx.getImageData(0, 0, W, H);
+    Ls = new Float32Array(W * H); As = new Float32Array(W * H); Bs = new Float32Array(W * H);
+    for (let i = 0, p = 0; i < W * H; i++, p += 4) { const [l, a, b] = rgbToLab(src.data[p], src.data[p + 1], src.data[p + 2]); Ls[i] = l; As[i] = a; Bs[i] = b; }
+    $("drop").style.display = "none"; view.style.display = "block";
+    await segmentBase();
+    ["holdOrig", "toggleMask", "save"].forEach(id => $(id).disabled = false);
+  } catch (e) { console.error(e); setStatus("처리 실패: " + e.message + " (인터넷 연결과 브라우저 콘솔을 확인하세요)", true); }
+}
+ 
+async function segmentBase() {
+  if (!src) return;
+  const c = document.createElement("canvas"); c.width = W; c.height = H; c.getContext("2d").putImageData(src, 0, 0);
+  setStatus("머리 영역 찾는 중…");
+  const t0 = performance.now();
+  rawMask = await hairMaskFor(c, W, H);
+  rebuildMask(); render();
+  setStatus(`머리 영역 분할 완료 (${Math.round(performance.now() - t0)}ms, ${W}×${H})`);
+}
+ 
+async function extractRef(file) {
+  if (!file) return;
+  try {
+    const img = await fileToImage(file);
+    const sc = Math.min(1, 512 / Math.max(img.width, img.height)), w = Math.round(img.width * sc), h = Math.round(img.height * sc);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const cx = c.getContext("2d", { willReadFrequently: true }); cx.drawImage(img, 0, 0, w, h);
+    setStatus("참고 사진에서 머리 찾는 중…");
+    const m = await hairMaskFor(c, w, h), d = cx.getImageData(0, 0, w, h).data;
+    let sw = 0, sl = 0, sa = 0, sb = 0;
+    for (let i = 0, p = 0; i < m.length; i++, p += 4) {
+      if (m[i] > 0.6) { const [l, a, b] = rgbToLab(d[p], d[p + 1], d[p + 2]); sw += m[i]; sl += l * m[i]; sa += a * m[i]; sb += b * m[i]; }
+    }
+    if (!sw) { setStatus("참고 사진에서 머리 영역을 찾지 못했습니다. 머리가 잘 보이는 사진을 써주세요.", true); return; }
+    const t = new Uint8ClampedArray(3); labToRgb(sl / sw, sa / sw, sb / sw, t, 0);
+    setTarget(rgbToHex(t[0], t[1], t[2]));
+    setStatus("참고 사진의 머리 평균색을 목표 색으로 잡았습니다.");
+  } catch (e) { console.error(e); setStatus("추출 실패: " + e.message, true); }
+}
+ 
+/* ---------- UI wiring ---------- */
+function setTarget(hex) {
+  target = hexToRgb(hex); $("picker").value = hex; $("hex").textContent = hex;
+  document.querySelectorAll(".sw").forEach(b => b.setAttribute("aria-pressed", b.dataset.hex === hex));
+  schedule();
+}
+PALETTE.forEach(([name, hex]) => {
+  const b = document.createElement("button");
+  b.className = "sw"; b.style.background = hex; b.title = name; b.dataset.hex = hex;
+  b.setAttribute("aria-label", name); b.setAttribute("aria-pressed", "false");
+  b.onclick = () => setTarget(hex);
+  $("swatches").appendChild(b);
+});
+$("picker").addEventListener("input", e => setTarget(e.target.value));
+ 
+const fmt = { lOff: v => (+v > 0 ? "+" : "") + v, feather: v => v };
+["lOff", "chroma", "tex", "vari", "amt"].forEach(id => $(id).addEventListener("input", e => { $(id + "V").textContent = (fmt[id] || (v => (+v).toFixed(2)))(e.target.value); schedule(); }));
+["thr", "soft", "feather"].forEach(id => $(id).addEventListener("input", e => { $(id + "V").textContent = (fmt[id] || (v => (+v).toFixed(2)))(e.target.value); rebuildMask(); schedule(); }));
+ 
+$("baseFile").addEventListener("change", e => loadBase(e.target.files[0]));
+$("refFile").addEventListener("change", e => { extractRef(e.target.files[0]); e.target.value = ""; });
+$("model").addEventListener("change", () => segmentBase().catch(e => setStatus("처리 실패: " + e.message, true)));
+ 
+const drop = $("drop"), wrap = $("wrap");
+["dragenter", "dragover"].forEach(t => wrap.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => wrap.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+wrap.addEventListener("drop", e => loadBase(e.dataTransfer.files[0]));
+ 
+const hold = $("holdOrig");
+const on = () => { showOrig = true; schedule(); }, off = () => { showOrig = false; schedule(); };
+hold.addEventListener("pointerdown", on); ["pointerup", "pointerleave", "pointercancel"].forEach(t => hold.addEventListener(t, off));
+hold.addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); on(); } });
+hold.addEventListener("keyup", off);
+view.addEventListener("pointerdown", on); ["pointerup", "pointerleave", "pointercancel"].forEach(t => view.addEventListener(t, off));
+ 
+$("toggleMask").addEventListener("click", e => { showMask = !showMask; e.currentTarget.setAttribute("aria-pressed", showMask); schedule(); });
+$("save").addEventListener("click", () => { const a = document.createElement("a"); a.download = "hair_color_test.png"; a.href = view.toDataURL("image/png"); a.click(); });
+</script>
+</body>
+</html>
+ 
+
